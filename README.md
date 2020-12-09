@@ -7,16 +7,34 @@ This project makes use of the https://team-cymru.com/community-services/ip-asn-m
 A command line tool for looking up details about domains and IP addresses.
 
 ```sh
-domaininfo git:main ❯ ./domaininfo google.com
-Canonical Name: google.com.
+domaininfo git:main ❯ make build
+go build ./
+domaininfo git:main ❯ ./domaininfo www.cnn.com
+Canonical Name (0): turner-tls.map.fastly.net.
 ---
-IPv4 Address: 172.217.5.238
-ASN Info: [15169 | 172.217.5.0/24 | US | arin | 2012-04-16]
+IPv4 Address: 151.101.193.67
+ASN Info: [54113 | 151.101.192.0/22 | US | arin | 2016-02-01]
+IPv4 Address: 151.101.1.67
+ASN Info: [54113 | 151.101.0.0/22 | US | arin | 2016-02-01]
+IPv4 Address: 151.101.65.67
+ASN Info: [54113 | 151.101.64.0/22 | US | arin | 2016-02-01]
+IPv4 Address: 151.101.129.67
+ASN Info: [54113 | 151.101.128.0/22 | US | arin | 2016-02-01]
 ---
-IPv6 Address: 2607:f8b0:4004:804::200e
-ASN Info: [15169 | 2607:f8b0:4004::/48 | US | arin | 2009-03-12]
+IPv6 Address: 2a04:4e42::323
+ASN Info: [54113 | 2a04:4e42::/36 | EU | ripencc | 2013-07-18]
+IPv6 Address: 2a04:4e42:400::323
+ASN Info: [54113 | 2a04:4e42::/36 | EU | ripencc | 2013-07-18]
+IPv6 Address: 2a04:4e42:600::323
+ASN Info: [54113 | 2a04:4e42::/36 | EU | ripencc | 2013-07-18]
+IPv6 Address: 2a04:4e42:200::323
+ASN Info: [54113 | 2a04:4e42::/36 | EU | ripencc | 2013-07-18]
 ---
-ASN Description: [15169 | US | arin | 2000-03-30 | GOOGLE, US]
+ASN Description: [54113 | US | arin | 2011-10-04 | FASTLY, US]
+---
+No CAA record on www.cnn.com
+No CAA record on turner-tls.map.fastly.net.
+No CAA record on cnn.com
 ```
 
 The command line output provides:
@@ -25,8 +43,10 @@ The command line output provides:
  * IPv4 and IPv6 addresses from DNS lookup
  * Autonomous system number (ASN) info for an IP address
  * A description of all autonomous system numbers found for the IP addresses
+ * CAA record lookup according to https://docs.digicert.com/manage-certificates/dns-caa-resource-record-check/
 
  # Further Reading
 
   * https://en.wikipedia.org/wiki/Autonomous_system_(Internet)
   * https://team-cymru.com/community-services/
+  * https://github.com/miekg/dns

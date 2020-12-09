@@ -7,15 +7,17 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/miekg/dns"
 )
 
-// IPv4ORIGINLOOKUPDNSSERVER conatains the domain of the IPv4 DNS server
+// IPv4ORIGINLOOKUPDNSSERVER conatains the domain of the IPv4 DNS lookup server
 const IPv4ORIGINLOOKUPDNSSERVER = "origin.asn.cymru.com"
 
-// IPv6ORIGINLOOKUPDNSSERVER contains the domain of the IPv6 DNS server
+// IPv6ORIGINLOOKUPDNSSERVER contains the domain of the IPv6 DNS lookup server
 const IPv6ORIGINLOOKUPDNSSERVER = "origin6.asn.cymru.com"
 
-// ASNLOOKUPDNSSERVER contains the domain of the IPv4 DNS server
+// ASNLOOKUPDNSSERVER contains the domain of the ASN lookup server
 const ASNLOOKUPDNSSERVER = "asn.cymru.com"
 
 // IPv4LOOKUPTEMPLATE is the template for looking up IPv4 addresses
@@ -24,7 +26,60 @@ const IPv4LOOKUPTEMPLATE = "%s." + IPv4ORIGINLOOKUPDNSSERVER
 // IPv6LOOKUPTEMPLATE is the template for looking up IPv6 addresses
 const IPv6LOOKUPTEMPLATE = "%s." + IPv6ORIGINLOOKUPDNSSERVER
 
+// ASNLOOKUPTEMPLATE is the template for looking up ASN descriptions
 const ASNLOOKUPTEMPLATE = "AS%s." + ASNLOOKUPDNSSERVER
+
+var dnsClient = &dns.Client{}
+
+// LookupCAA looks up CAA records for a domain
+func LookupCAA(c *dns.Client, name string) ([]*dns.CAA, error) {
+	var rrs []*dns.CAA
+
+	msg := new(dns.Msg)
+	msg.SetQuestion(dns.Fqdn(name), dns.TypeCAA)
+
+	rsp, _, err := c.Exchange(msg, "1.1.1.1:53")
+	if err != nil {
+		return nil, err
+	}
+
+	if rsp.Rcode != dns.RcodeSuccess {
+		return nil, fmt.Errorf("lookup code %s", dns.RcodeToString[rsp.Rcode])
+	}
+
+	for _, rr := range rsp.Answer {
+		if a, ok := rr.(*dns.CAA); ok {
+			rrs = append(rrs, a)
+		}
+	}
+
+	return rrs, nil
+}
+
+// LookupCNAME looks up CNAME records for a domain
+func LookupCNAME(c *dns.Client, name string) ([]*dns.CNAME, error) {
+	var rrs []*dns.CNAME
+
+	msg := new(dns.Msg)
+	msg.SetQuestion(dns.Fqdn(name), dns.TypeCNAME)
+
+	rsp, _, err := c.Exchange(msg, "1.1.1.1:53")
+	if err != nil {
+		return nil, err
+	}
+
+	if rsp.Rcode != dns.RcodeSuccess {
+		return nil, fmt.Errorf("lookup code %s", dns.RcodeToString[rsp.Rcode])
+	}
+
+	for _, rr := range rsp.Answer {
+		if a, ok := rr.(*dns.CNAME); ok {
+			rrs = append(rrs, a)
+		}
+	}
+
+	return rrs, nil
+}
 
 func isZeros(p net.IP) bool {
 	for i := 0; i < len(p); i++ {
@@ -57,12 +112,26 @@ func main() {
 		log.Fatal("Requires at least one command line argument")
 	}
 
-	cname, err := net.LookupCNAME(os.Args[1])
-	if err != nil {
-		log.Fatal(err)
+	domains := []string{os.Args[1]}
+	domain := ""
+	cnames := []string{}
+
+	for len(domains) != 0 {
+		domain, domains = domains[0], domains[1:]
+		lc, err := LookupCNAME(dnsClient, domain)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, cname := range lc {
+			cnames = append(cnames, cname.Target)
+			domains = append(domains, cname.Target)
+		}
+	}
+	for i, cname := range cnames {
+		fmt.Printf("Canonical Name (%d): %s\n", i, cname)
 	}
 
-	fmt.Printf("Canonical Name: %s\n", cname)
 	fmt.Println("---")
 
 	ips, err := net.LookupIP(os.Args[1])
@@ -132,6 +201,74 @@ func main() {
 	for k := range asnSet {
 		if res, err := net.LookupTXT(fmt.Sprintf(ASNLOOKUPTEMPLATE, k)); err == nil {
 			fmt.Printf("ASN Description: %s\n", res)
+		}
+	}
+
+	fmt.Println("---")
+
+	caas, err := LookupCAA(dnsClient, os.Args[1])
+	if err != nil {
+		fmt.Printf("Error looking up CAA records: %s\n", err)
+	}
+	if len(caas) == 0 {
+		fmt.Printf("No CAA record on %s\n", os.Args[1])
+	}
+	for _, r := range caas {
+		fmt.Printf("CAA Record: %s\n", r.String())
+	}
+
+	curDomains := []string{}
+	done := true
+	if len(caas) == 0 {
+		curDomains = append(curDomains, os.Args[1])
+		done = false
+	}
+	i := 0
+
+	for (!done || i <= 8) && len(curDomains) != 0 {
+		i++
+		cnames := []*dns.CNAME{}
+		for _, domain := range curDomains {
+			lc, err := LookupCNAME(dnsClient, domain)
+			if err != nil {
+				fmt.Printf("Error looking up CNAME records: %s\n", err)
+				continue
+			}
+			cnames = append(cnames, lc...)
+		}
+		curDomains = []string{}
+		if len(cnames) != 0 {
+			for _, r := range cnames {
+				caas, err := LookupCAA(dnsClient, r.Target)
+				if err != nil {
+					fmt.Printf("Error looking up CAA records: %s\n", err)
+					continue
+				}
+				if len(caas) == 0 {
+					fmt.Printf("No CAA record on %s\n", r.Target)
+					continue
+				}
+				done = true
+				for _, r := range caas {
+					fmt.Printf("CAA Record: %s\n", r.String())
+				}
+			}
+		}
+	}
+	if !done {
+		i := strings.IndexAny(os.Args[1], ".")
+		if i > 0 {
+			parent := os.Args[1][i+1:]
+			caas, err := LookupCAA(dnsClient, parent)
+			if err != nil {
+				fmt.Printf("Error looking up CAA records: %s\n", err)
+			}
+			if len(caas) == 0 {
+				fmt.Printf("No CAA record on %s\n", parent)
+			}
+			for _, r := range caas {
+				fmt.Printf("CAA Record: %s\n", r.String())
+			}
 		}
 	}
 }
