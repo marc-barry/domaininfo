@@ -8,8 +8,8 @@ A command line tool for looking up details about domains and IP addresses.
 
 ```sh
 domaininfo git:main ❯ make build
-go build ./
-domaininfo git:main ❯ ./domaininfo www.cnn.com
+go build -o ./bin/domaininfo ./cmd/domaininfo
+domaininfo git:main ❯ ./bin/domaininfo www.cnn.com
 Canonical Name (0): turner-tls.map.fastly.net.
 ---
 IPv4 Address: 151.101.193.67

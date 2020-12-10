@@ -9,6 +9,9 @@ import (
 	"strings"
 
 	"github.com/miekg/dns"
+
+	"github.com/marc-barry/domaininfo/pkg/dnsutil"
+	"github.com/marc-barry/domaininfo/pkg/ip"
 )
 
 // IPv4ORIGINLOOKUPDNSSERVER conatains the domain of the IPv4 DNS lookup server
@@ -29,83 +32,7 @@ const IPv6LOOKUPTEMPLATE = "%s." + IPv6ORIGINLOOKUPDNSSERVER
 // ASNLOOKUPTEMPLATE is the template for looking up ASN descriptions
 const ASNLOOKUPTEMPLATE = "AS%s." + ASNLOOKUPDNSSERVER
 
-var dnsClient = &dns.Client{}
-
-// LookupCAA looks up CAA records for a domain
-func LookupCAA(c *dns.Client, name string) ([]*dns.CAA, error) {
-	var rrs []*dns.CAA
-
-	msg := new(dns.Msg)
-	msg.SetQuestion(dns.Fqdn(name), dns.TypeCAA)
-
-	rsp, _, err := c.Exchange(msg, "1.1.1.1:53")
-	if err != nil {
-		return nil, err
-	}
-
-	if rsp.Rcode != dns.RcodeSuccess {
-		return nil, fmt.Errorf("lookup code %s", dns.RcodeToString[rsp.Rcode])
-	}
-
-	for _, rr := range rsp.Answer {
-		if a, ok := rr.(*dns.CAA); ok {
-			rrs = append(rrs, a)
-		}
-	}
-
-	return rrs, nil
-}
-
-// LookupCNAME looks up CNAME records for a domain
-func LookupCNAME(c *dns.Client, name string) ([]*dns.CNAME, error) {
-	var rrs []*dns.CNAME
-
-	msg := new(dns.Msg)
-	msg.SetQuestion(dns.Fqdn(name), dns.TypeCNAME)
-
-	rsp, _, err := c.Exchange(msg, "1.1.1.1:53")
-	if err != nil {
-		return nil, err
-	}
-
-	if rsp.Rcode != dns.RcodeSuccess {
-		return nil, fmt.Errorf("lookup code %s", dns.RcodeToString[rsp.Rcode])
-	}
-
-	for _, rr := range rsp.Answer {
-		if a, ok := rr.(*dns.CNAME); ok {
-			rrs = append(rrs, a)
-		}
-	}
-
-	return rrs, nil
-}
-
-func isZeros(p net.IP) bool {
-	for i := 0; i < len(p); i++ {
-		if p[i] != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func decompressIPv6(ip net.IP) (string, error) {
-	if len(ip) == net.IPv4len {
-		return "", fmt.Errorf("Not an IPv6 address")
-	}
-	if len(ip) != net.IPv6len {
-		return "", fmt.Errorf("Not an IPv6 address. Got length %d", len(ip))
-	}
-	if len(ip) == net.IPv6len &&
-		isZeros(ip[0:10]) &&
-		ip[10] == 0xff &&
-		ip[11] == 0xff {
-		return "", fmt.Errorf("Not an IPv6 address")
-	}
-	return strings.ToLower(fmt.Sprintf("%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x",
-		ip[0], ip[1], ip[2], ip[3], ip[4], ip[5], ip[6], ip[7], ip[8], ip[9], ip[10], ip[11], ip[12], ip[13], ip[14], ip[15])), nil
-}
+var resolver = dnsutil.NewResolver()
 
 func main() {
 	if len(os.Args) < 2 {
@@ -118,7 +45,7 @@ func main() {
 
 	for len(domains) != 0 {
 		domain, domains = domains[0], domains[1:]
-		lc, err := LookupCNAME(dnsClient, domain)
+		lc, err := resolver.LookupCNAME(domain)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -175,7 +102,7 @@ func main() {
 
 	for _, ipv6 := range ipv6s {
 		fmt.Printf("IPv6 Address: %s\n", ipv6.String())
-		ipv6decom, err := decompressIPv6(ipv6)
+		ipv6decom, err := ip.UncompressedIPv6(ipv6)
 		if err != nil {
 			fmt.Printf("Error decompressing IPv6 address: %s\n", err)
 			continue
@@ -206,7 +133,7 @@ func main() {
 
 	fmt.Println("---")
 
-	caas, err := LookupCAA(dnsClient, os.Args[1])
+	caas, err := resolver.LookupCAA(os.Args[1])
 	if err != nil {
 		fmt.Printf("Error looking up CAA records: %s\n", err)
 	}
@@ -229,7 +156,7 @@ func main() {
 		i++
 		cnames := []*dns.CNAME{}
 		for _, domain := range curDomains {
-			lc, err := LookupCNAME(dnsClient, domain)
+			lc, err := resolver.LookupCNAME(domain)
 			if err != nil {
 				fmt.Printf("Error looking up CNAME records: %s\n", err)
 				continue
@@ -239,7 +166,7 @@ func main() {
 		curDomains = []string{}
 		if len(cnames) != 0 {
 			for _, r := range cnames {
-				caas, err := LookupCAA(dnsClient, r.Target)
+				caas, err := resolver.LookupCAA(r.Target)
 				if err != nil {
 					fmt.Printf("Error looking up CAA records: %s\n", err)
 					continue
@@ -259,7 +186,7 @@ func main() {
 		i := strings.IndexAny(os.Args[1], ".")
 		if i > 0 {
 			parent := os.Args[1][i+1:]
-			caas, err := LookupCAA(dnsClient, parent)
+			caas, err := resolver.LookupCAA(parent)
 			if err != nil {
 				fmt.Printf("Error looking up CAA records: %s\n", err)
 			}
