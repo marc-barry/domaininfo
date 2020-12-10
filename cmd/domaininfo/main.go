@@ -61,19 +61,23 @@ func main() {
 
 	fmt.Println("---")
 
-	ips, err := net.LookupIP(os.Args[1])
+	ipv4s := make([]net.IP, 0)
+	ipv6s := make([]net.IP, 0)
+
+	res4, err := resolver.LookupA(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
+	for _, r := range res4 {
+		ipv4s = append(ipv4s, r.A)
+	}
 
-	ipv4s := make([]net.IP, 0)
-	ipv6s := make([]net.IP, 0)
-	for _, ip := range ips {
-		if ip.To4() != nil {
-			ipv4s = append(ipv4s, ip)
-			continue
-		}
-		ipv6s = append(ipv6s, ip)
+	res6, err := resolver.LookupAAAA(os.Args[1])
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, r := range res6 {
+		ipv6s = append(ipv6s, r.AAAA)
 	}
 
 	asnSet := map[string]string{}
@@ -87,12 +91,14 @@ func main() {
 		for i := 0; i < len(ipv4); i++ {
 			strs[len(ipv4)-1-i] = strconv.Itoa(int(ipv4[i]))
 		}
-		if res, err := net.LookupTXT(fmt.Sprintf(IPv4LOOKUPTEMPLATE, strings.Join(strs, "."))); err == nil {
-			fmt.Printf("ASN Info: %s\n", res)
+		if res, err := resolver.LookupTXT(fmt.Sprintf(IPv4LOOKUPTEMPLATE, strings.Join(strs, "."))); err == nil {
 			for _, r := range res {
-				sp := strings.Split(r, " | ")
-				if len(sp) > 0 {
-					asnSet[sp[0]] = sp[0]
+				for _, txt := range r.Txt {
+					fmt.Printf("ASN Info: %s\n", txt)
+					sp := strings.Split(txt, " | ")
+					if len(sp) > 0 {
+						asnSet[sp[0]] = sp[0]
+					}
 				}
 			}
 		}
@@ -112,12 +118,14 @@ func main() {
 		for i := 0; i < len(ipv6decomstrip); i++ {
 			strs[len(ipv6decomstrip)-1-i] = string(ipv6decomstrip[i])
 		}
-		if res, err := net.LookupTXT(fmt.Sprintf(IPv6LOOKUPTEMPLATE, strings.Join(strs, "."))); err == nil {
-			fmt.Printf("ASN Info: %s\n", res)
+		if res, err := resolver.LookupTXT(fmt.Sprintf(IPv6LOOKUPTEMPLATE, strings.Join(strs, "."))); err == nil {
 			for _, r := range res {
-				sp := strings.Split(r, " | ")
-				if len(sp) > 0 {
-					asnSet[sp[0]] = sp[0]
+				for _, txt := range r.Txt {
+					fmt.Printf("ASN Info: %s\n", txt)
+					sp := strings.Split(txt, " | ")
+					if len(sp) > 0 {
+						asnSet[sp[0]] = sp[0]
+					}
 				}
 			}
 		}
@@ -126,8 +134,12 @@ func main() {
 	fmt.Println("---")
 
 	for k := range asnSet {
-		if res, err := net.LookupTXT(fmt.Sprintf(ASNLOOKUPTEMPLATE, k)); err == nil {
-			fmt.Printf("ASN Description: %s\n", res)
+		if res, err := resolver.LookupTXT(fmt.Sprintf(ASNLOOKUPTEMPLATE, k)); err == nil {
+			for _, r := range res {
+				for _, txt := range r.Txt {
+					fmt.Printf("ASN Description: %s\n", txt)
+				}
+			}
 		}
 	}
 
