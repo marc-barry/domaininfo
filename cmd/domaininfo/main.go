@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -8,10 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/miekg/dns"
-
 	"github.com/marc-barry/domaininfo/pkg/dnsutil"
 	"github.com/marc-barry/domaininfo/pkg/ip"
+	"github.com/marc-barry/domaininfo/pkg/types"
 )
 
 // IPv4ORIGINLOOKUPDNSSERVER conatains the domain of the IPv4 DNS lookup server
@@ -39,32 +39,31 @@ func main() {
 		log.Fatal("Requires at least one command line argument")
 	}
 
-	domains := []string{os.Args[1]}
-	domain := ""
-	cnames := []string{}
+	domain := os.Args[1]
 
-	for len(domains) != 0 {
-		domain, domains = domains[0], domains[1:]
-		lc, err := resolver.LookupCNAME(domain)
+	targetsQueue := []string{domain}
+	domainToLookup := ""
+	targets := []string{}
+
+	for len(targetsQueue) != 0 {
+		domainToLookup, targetsQueue = targetsQueue[0], targetsQueue[1:]
+		lc, err := resolver.LookupCNAME(domainToLookup)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		for _, cname := range lc {
-			cnames = append(cnames, cname.Target)
-			domains = append(domains, cname.Target)
+			targets = append(targets, cname.Target)
+			targetsQueue = append(targetsQueue, cname.Target)
 		}
 	}
-	for i, cname := range cnames {
-		fmt.Printf("Canonical Name (%d): %s\n", i, cname)
-	}
 
-	fmt.Println("---")
+	cnameInfo := types.CanonicalNamesInfo{Targets: targets}
 
 	ipv4s := make([]net.IP, 0)
 	ipv6s := make([]net.IP, 0)
 
-	res4, err := resolver.LookupA(os.Args[1])
+	res4, err := resolver.LookupA(domain)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -72,7 +71,7 @@ func main() {
 		ipv4s = append(ipv4s, r.A)
 	}
 
-	res6, err := resolver.LookupAAAA(os.Args[1])
+	res6, err := resolver.LookupAAAA(domain)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -80,10 +79,12 @@ func main() {
 		ipv6s = append(ipv6s, r.AAAA)
 	}
 
-	asnSet := map[string]string{}
+	addresses := types.Addresses{IPv4AddressInfo: make(map[string][]types.ASNInfo), IPv6AddressInfo: make(map[string][]types.ASNInfo)}
+	asns := types.ASNs{Descriptions: make(map[string]*types.ASNDescription)}
 
 	for _, ipv4 := range ipv4s {
-		fmt.Printf("IPv4 Address: %s\n", ipv4.String())
+		addresses.IPv4AddressInfo[ipv4.String()] = make([]types.ASNInfo, 0)
+		info := addresses.IPv4AddressInfo[ipv4.String()]
 		if len(ipv4) != net.IPv4len {
 			ipv4 = ipv4[12:]
 		}
@@ -94,23 +95,22 @@ func main() {
 		if res, err := resolver.LookupTXT(fmt.Sprintf(IPv4LOOKUPTEMPLATE, strings.Join(strs, "."))); err == nil {
 			for _, r := range res {
 				for _, txt := range r.Txt {
-					fmt.Printf("ASN Info: %s\n", txt)
 					sp := strings.Split(txt, " | ")
-					if len(sp) > 0 {
-						asnSet[sp[0]] = sp[0]
+					if len(sp) == 5 {
+						asns.Descriptions[sp[0]] = &types.ASNDescription{}
+						addresses.IPv4AddressInfo[ipv4.String()] = append(info, types.ASNInfo{ASN: sp[0], AddressBlock: sp[1], Country: sp[2], InternetRegistry: sp[3], Date: sp[4]})
 					}
 				}
 			}
 		}
 	}
 
-	fmt.Println("---")
-
 	for _, ipv6 := range ipv6s {
-		fmt.Printf("IPv6 Address: %s\n", ipv6.String())
+		addresses.IPv6AddressInfo[ipv6.String()] = make([]types.ASNInfo, 0)
+		info := addresses.IPv6AddressInfo[ipv6.String()]
 		ipv6decom, err := ip.UncompressedIPv6(ipv6)
 		if err != nil {
-			fmt.Printf("Error decompressing IPv6 address: %s\n", err)
+			log.Printf("Error decompressing IPv6 address: %s\n", err)
 			continue
 		}
 		ipv6decomstrip := strings.ReplaceAll(ipv6decom, ":", "")
@@ -121,93 +121,92 @@ func main() {
 		if res, err := resolver.LookupTXT(fmt.Sprintf(IPv6LOOKUPTEMPLATE, strings.Join(strs, "."))); err == nil {
 			for _, r := range res {
 				for _, txt := range r.Txt {
-					fmt.Printf("ASN Info: %s\n", txt)
 					sp := strings.Split(txt, " | ")
-					if len(sp) > 0 {
-						asnSet[sp[0]] = sp[0]
+					if len(sp) == 5 {
+						asns.Descriptions[sp[0]] = &types.ASNDescription{}
+						addresses.IPv6AddressInfo[ipv6.String()] = append(info, types.ASNInfo{ASN: sp[0], AddressBlock: sp[1], Country: sp[2], InternetRegistry: sp[3], Date: sp[4]})
 					}
 				}
 			}
 		}
 	}
 
-	fmt.Println("---")
-
-	for k := range asnSet {
+	for k, v := range asns.Descriptions {
 		if res, err := resolver.LookupTXT(fmt.Sprintf(ASNLOOKUPTEMPLATE, k)); err == nil {
 			for _, r := range res {
 				for _, txt := range r.Txt {
-					fmt.Printf("ASN Description: %s\n", txt)
+					sp := strings.Split(txt, " | ")
+					if len(sp) == 5 && sp[0] == k {
+						v.Country = sp[1]
+						v.InternetRegistry = sp[2]
+						v.Date = sp[3]
+						v.Org = sp[4]
+					}
 				}
 			}
 		}
 	}
 
-	fmt.Println("---")
+	caas := types.CAAs{CAAInfos: make([]types.CAAInfo, 0)}
+	found := false
 
-	caas, err := resolver.LookupCAA(os.Args[1])
+	res, err := resolver.LookupCAA(domain)
 	if err != nil {
-		fmt.Printf("Error looking up CAA records: %s\n", err)
+		log.Printf("Error looking up CAA records: %s\n", err)
 	}
-	if len(caas) == 0 {
-		fmt.Printf("No CAA record on %s\n", os.Args[1])
+	info := types.CAAInfo{Domain: domain, CAs: make([]string, 0)}
+	for _, r := range res {
+		found = true
+		info.CAs = append(info.CAs, strings.Replace(r.String(), "\t", " ", -1))
 	}
-	for _, r := range caas {
-		fmt.Printf("CAA Record: %s\n", r.String())
-	}
+	caas.CAAInfos = append(caas.CAAInfos, info)
 
-	curDomains := []string{}
-	done := true
-	if len(caas) == 0 {
-		curDomains = append(curDomains, os.Args[1])
-		done = false
-	}
-	i := 0
-
-	for (!done || i <= 8) && len(curDomains) != 0 {
-		i++
-		cnames := []*dns.CNAME{}
-		for _, domain := range curDomains {
-			lc, err := resolver.LookupCNAME(domain)
+	if !found {
+		for i, domain := range cnameInfo.Targets {
+			if i == 7 {
+				break
+			}
+			res, err := resolver.LookupCAA(domain)
 			if err != nil {
-				fmt.Printf("Error looking up CNAME records: %s\n", err)
+				log.Printf("Error looking up CAA records: %s\n", err)
 				continue
 			}
-			cnames = append(cnames, lc...)
+			info := types.CAAInfo{Domain: domain, CAs: make([]string, 0)}
+			for _, r := range res {
+				info.CAs = append(info.CAs, strings.Replace(r.String(), "\t", " ", -1))
+			}
+			caas.CAAInfos = append(caas.CAAInfos, info)
+			if len(res) != 0 {
+				found = true
+			}
+			break
 		}
-		curDomains = []string{}
-		if len(cnames) != 0 {
-			for _, r := range cnames {
-				caas, err := resolver.LookupCAA(r.Target)
+		if !found {
+			i := strings.IndexAny(domain, ".")
+			if i > 0 {
+				parent := domain[i+1:]
+				res, err := resolver.LookupCAA(parent)
 				if err != nil {
-					fmt.Printf("Error looking up CAA records: %s\n", err)
-					continue
+					log.Printf("Error looking up CAA records: %s\n", err)
 				}
-				if len(caas) == 0 {
-					fmt.Printf("No CAA record on %s\n", r.Target)
-					continue
+				info := types.CAAInfo{Domain: parent, CAs: make([]string, 0)}
+				for _, r := range res {
+					info.CAs = append(info.CAs, strings.Replace(r.String(), "\t", " ", -1))
 				}
-				done = true
-				for _, r := range caas {
-					fmt.Printf("CAA Record: %s\n", r.String())
-				}
+				caas.CAAInfos = append(caas.CAAInfos, info)
 			}
 		}
 	}
-	if !done {
-		i := strings.IndexAny(os.Args[1], ".")
-		if i > 0 {
-			parent := os.Args[1][i+1:]
-			caas, err := resolver.LookupCAA(parent)
-			if err != nil {
-				fmt.Printf("Error looking up CAA records: %s\n", err)
-			}
-			if len(caas) == 0 {
-				fmt.Printf("No CAA record on %s\n", parent)
-			}
-			for _, r := range caas {
-				fmt.Printf("CAA Record: %s\n", r.String())
-			}
-		}
+
+	dinfo := types.DomainInfo{
+		Domain:             domain,
+		CanonicalNamesInfo: cnameInfo,
+		Addresses:          addresses,
+		ASNs:               asns,
+		CAAs:               caas,
+	}
+
+	if b, err := json.MarshalIndent(dinfo, "", "  "); err == nil {
+		fmt.Println(string(b))
 	}
 }
