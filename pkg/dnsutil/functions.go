@@ -57,9 +57,9 @@ func IPv6List(resolver *Resolver, domain string) ([]net.IP, error) {
 	return ips, nil
 }
 
-// NewAddressesInfo returns a an address into type based on IPv4 and IPv6 input lists
-func NewAddressesInfo(resolver *Resolver, ipv4s []net.IP, ipv6s []net.IP) (map[string][]types.ASNInfo, map[string][]types.ASNInfo, map[string]string, error) {
-	asns := make(map[string]string)
+// AddressesInfos returns a an address into type based on IPv4 and IPv6 input lists
+func AddressesInfos(resolver *Resolver, ipv4s []net.IP, ipv6s []net.IP) (map[string][]types.ASNInfo, map[string][]types.ASNInfo, []string, error) {
+	asnsMap := make(map[string]string)
 
 	ipv4Info := make(map[string][]types.ASNInfo)
 	for _, ipv4 := range ipv4s {
@@ -77,7 +77,7 @@ func NewAddressesInfo(resolver *Resolver, ipv4s []net.IP, ipv6s []net.IP) (map[s
 					sp := strings.Split(txt, " | ")
 					if len(sp) == 5 {
 						ipv4Info[ipv4.String()] = append(ipv4Info[ipv4.String()], types.ASNInfo{ASN: sp[0], AddressBlock: sp[1], Country: sp[2], InternetRegistry: sp[3], Date: sp[4]})
-						asns[sp[0]] = sp[0]
+						asnsMap[sp[0]] = sp[0]
 					}
 				}
 			}
@@ -102,12 +102,86 @@ func NewAddressesInfo(resolver *Resolver, ipv4s []net.IP, ipv6s []net.IP) (map[s
 					sp := strings.Split(txt, " | ")
 					if len(sp) == 5 {
 						ipv6Info[ipv6.String()] = append(ipv6Info[ipv6.String()], types.ASNInfo{ASN: sp[0], AddressBlock: sp[1], Country: sp[2], InternetRegistry: sp[3], Date: sp[4]})
-						asns[sp[0]] = sp[0]
+						asnsMap[sp[0]] = sp[0]
 					}
 				}
 			}
 		}
 	}
 
+	asns := make([]string, 0)
+	for k := range asnsMap {
+		asns = append(asns, k)
+	}
+
 	return ipv4Info, ipv6Info, asns, nil
+}
+
+// ASNDescriptions returns a list of ASN descriptions
+func ASNDescriptions(resolver *Resolver, asns []string) []types.ASNDescription {
+	asnDescriptions := make([]types.ASNDescription, 0)
+
+	for _, asn := range asns {
+		if res, err := resolver.LookupTXT(fmt.Sprintf(types.ASNLOOKUPTEMPLATE, asn)); err == nil {
+			for _, r := range res {
+				for _, txt := range r.Txt {
+					sp := strings.Split(txt, " | ")
+					asnDescriptions = append(asnDescriptions, types.ASNDescription{ASN: sp[0], Country: sp[1], InternetRegistry: sp[2], Date: sp[3], Org: sp[4]})
+				}
+			}
+		}
+	}
+	return asnDescriptions
+}
+
+// CAAInfos returns a list CAA info
+func CAAInfos(resolver *Resolver, domain string, targets []string) []types.CAAInfo {
+	caaInfos := make([]types.CAAInfo, 0)
+	found := false
+
+	res, err := resolver.LookupCAA(domain)
+	if err == nil {
+		info := types.CAAInfo{Domain: domain, CAs: make([]string, 0)}
+		for _, r := range res {
+			found = true
+			info.CAs = append(info.CAs, r.Value)
+		}
+		caaInfos = append(caaInfos, info)
+	}
+
+	if !found {
+		for i, domain := range targets {
+			if i == 7 {
+				break
+			}
+			res, err := resolver.LookupCAA(domain)
+			if err != nil {
+				continue
+			}
+			info := types.CAAInfo{Domain: domain, CAs: make([]string, 0)}
+			for _, r := range res {
+				info.CAs = append(info.CAs, r.Value)
+			}
+			caaInfos = append(caaInfos, info)
+			if len(res) != 0 {
+				found = true
+			}
+			break
+		}
+		if !found {
+			i := strings.IndexAny(domain, ".")
+			if i > 0 {
+				parent := domain[i+1:]
+				res, err := resolver.LookupCAA(parent)
+				if err == nil {
+					info := types.CAAInfo{Domain: parent, CAs: make([]string, 0)}
+					for _, r := range res {
+						info.CAs = append(info.CAs, r.Value)
+					}
+					caaInfos = append(caaInfos, info)
+				}
+			}
+		}
+	}
+	return caaInfos
 }

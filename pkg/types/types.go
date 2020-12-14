@@ -11,6 +11,7 @@ type ASNInfo struct {
 
 // ASNDescription contains ASN info for a specific ASN
 type ASNDescription struct {
+	ASN              string `json:"asn"`
 	Country          string `json:"country"`
 	InternetRegistry string `json:"internetRegistry"`
 	Date             string `json:"date"`
@@ -25,10 +26,10 @@ type CAAInfo struct {
 
 // DomainInfo contains all domain information
 type DomainInfo struct {
-	Domain                string                    `json:"domain"`
-	CanonicalNamesTargets []string                  `json:"canonicalNamestargets"`
-	IPv4AddressInfo       map[string][]ASNInfo      `json:"ipv4AddressInfo"`
-	IPv6AddressInfo       map[string][]ASNInfo      `json:"ipv6AddressInfo"`
-	ASNDescriptions       map[string]ASNDescription `json:"asnDescriptions"`
-	CAAInfos              []CAAInfo                 `json:"caaInfos"`
+	Domain                string               `json:"domain"`
+	CanonicalNamesTargets []string             `json:"canonicalNamesTargets"`
+	IPv4AddressInfo       map[string][]ASNInfo `json:"ipv4AddressInfo"`
+	IPv6AddressInfo       map[string][]ASNInfo `json:"ipv6AddressInfo"`
+	ASNDescriptions       []ASNDescription     `json:"asnDescriptions"`
+	CAAInfos              []CAAInfo            `json:"caaInfos"`
 }
