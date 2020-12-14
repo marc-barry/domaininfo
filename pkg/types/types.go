@@ -1,9 +1,6 @@
 package types
 
-type CanonicalNamesInfo struct {
-	Targets []string `json:"targets"`
-}
-
+// ASNInfo contains ASN info for an IP address
 type ASNInfo struct {
 	ASN              string `json:"asn"`
 	AddressBlock     string `json:"addressBlock"`
@@ -12,11 +9,7 @@ type ASNInfo struct {
 	Date             string `json:"date"`
 }
 
-type Addresses struct {
-	IPv4AddressInfo map[string][]ASNInfo `json:"ipv4AddressInfo"`
-	IPv6AddressInfo map[string][]ASNInfo `json:"ipv6AddressInfo"`
-}
-
+// ASNDescription contains ASN info for a specific ASN
 type ASNDescription struct {
 	Country          string `json:"country"`
 	InternetRegistry string `json:"internetRegistry"`
@@ -24,23 +17,18 @@ type ASNDescription struct {
 	Org              string `json:"org"`
 }
 
-type ASNs struct {
-	Descriptions map[string]*ASNDescription `json:"descriptions"`
-}
-
+// CAAInfo contains certificate authority lists per domain
 type CAAInfo struct {
 	Domain string   `json:"domain"`
 	CAs    []string `json:"cas"`
 }
 
-type CAAs struct {
-	CAAInfos []CAAInfo `json:"caaInfos"`
-}
-
+// DomainInfo contains all domain information
 type DomainInfo struct {
-	Domain             string             `json:"domain"`
-	CanonicalNamesInfo CanonicalNamesInfo `json:"canonicalNamesInfo"`
-	Addresses          Addresses          `json:"addresses"`
-	ASNs               ASNs               `json:"asns"`
-	CAAs               CAAs               `json:"caas"`
+	Domain                string                    `json:"domain"`
+	CanonicalNamesTargets []string                  `json:"canonicalNamestargets"`
+	IPv4AddressInfo       map[string][]ASNInfo      `json:"ipv4AddressInfo"`
+	IPv6AddressInfo       map[string][]ASNInfo      `json:"ipv6AddressInfo"`
+	ASNDescriptions       map[string]ASNDescription `json:"asnDescriptions"`
+	CAAInfos              []CAAInfo                 `json:"caaInfos"`
 }
