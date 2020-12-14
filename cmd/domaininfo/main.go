@@ -41,42 +41,20 @@ func main() {
 
 	domain := os.Args[1]
 
-	targetsQueue := []string{domain}
-	domainToLookup := ""
-	targets := []string{}
-
-	for len(targetsQueue) != 0 {
-		domainToLookup, targetsQueue = targetsQueue[0], targetsQueue[1:]
-		lc, err := resolver.LookupCNAME(domainToLookup)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		for _, cname := range lc {
-			targets = append(targets, cname.Target)
-			targetsQueue = append(targetsQueue, cname.Target)
-		}
+	targets, err := dnsutil.CNAMEChain(resolver, domain)
+	if err != nil {
+		log.Fatal(err)
 	}
 
 	cnameInfo := types.CanonicalNamesInfo{Targets: targets}
 
-	ipv4s := make([]net.IP, 0)
-	ipv6s := make([]net.IP, 0)
-
-	res4, err := resolver.LookupA(domain)
+	ipv4s, err := dnsutil.IPv4List(resolver, domain)
 	if err != nil {
 		log.Fatal(err)
 	}
-	for _, r := range res4 {
-		ipv4s = append(ipv4s, r.A)
-	}
-
-	res6, err := resolver.LookupAAAA(domain)
+	ipv6s, err := dnsutil.IPv6List(resolver, domain)
 	if err != nil {
 		log.Fatal(err)
-	}
-	for _, r := range res6 {
-		ipv6s = append(ipv6s, r.AAAA)
 	}
 
 	addresses := types.Addresses{IPv4AddressInfo: make(map[string][]types.ASNInfo), IPv6AddressInfo: make(map[string][]types.ASNInfo)}
