@@ -10,7 +10,7 @@ import (
 
 // RunCommand runs the domaininf command
 func RunCommand(domain string) error {
-	resolver := dnsutil.NewResolver()
+	resolver := dnsutil.NewResolver("1.1.1.1:53")
 
 	targets, err := dnsutil.CNAMEChain(resolver, domain)
 	if err != nil {

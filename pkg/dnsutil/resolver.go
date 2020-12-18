@@ -8,15 +8,15 @@ import (
 
 // Resolver represents a DNS resolver that can be used to lookup DNS records
 type Resolver struct {
-	c  *dns.Client
-	sa string
+	c       *dns.Client
+	address string
 }
 
 // NewResolver constructs a new DNS resolver with an underlying DNS client
-func NewResolver() *Resolver {
+func NewResolver(address string) *Resolver {
 	r := new(Resolver)
 	r.c = &dns.Client{}
-	r.sa = "1.1.1.1:53"
+	r.address = address
 	return r
 }
 
@@ -27,7 +27,7 @@ func (r *Resolver) LookupA(name string) ([]*dns.A, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion(dns.Fqdn(name), dns.TypeA)
 
-	rsp, _, err := r.c.Exchange(msg, r.sa)
+	rsp, _, err := r.c.Exchange(msg, r.address)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (r *Resolver) LookupAAAA(name string) ([]*dns.AAAA, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion(dns.Fqdn(name), dns.TypeAAAA)
 
-	rsp, _, err := r.c.Exchange(msg, r.sa)
+	rsp, _, err := r.c.Exchange(msg, r.address)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (r *Resolver) LookupCAA(name string) ([]*dns.CAA, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion(dns.Fqdn(name), dns.TypeCAA)
 
-	rsp, _, err := r.c.Exchange(msg, r.sa)
+	rsp, _, err := r.c.Exchange(msg, r.address)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,7 @@ func (r *Resolver) LookupCNAME(name string) ([]*dns.CNAME, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion(dns.Fqdn(name), dns.TypeCNAME)
 
-	rsp, _, err := r.c.Exchange(msg, r.sa)
+	rsp, _, err := r.c.Exchange(msg, r.address)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (r *Resolver) LookupTXT(name string) ([]*dns.TXT, error) {
 	msg := new(dns.Msg)
 	msg.SetQuestion(dns.Fqdn(name), dns.TypeTXT)
 
-	rsp, _, err := r.c.Exchange(msg, r.sa)
+	rsp, _, err := r.c.Exchange(msg, r.address)
 	if err != nil {
 		return nil, err
 	}
